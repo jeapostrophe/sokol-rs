@@ -17,6 +17,7 @@ pub mod ffi {
     pub const SAPP_MAX_TOUCHPOINTS: usize = 8;
     pub const SAPP_MAX_MOUSEBUTTONS: usize = 3;
     const _SAPP_MAX_KEYCODES: usize = 512;
+    pub const SAPP_MAX_ICONIMAGES: usize = 8;
 
     #[repr(C)]
     #[derive(Copy, Clone, Debug)]
@@ -66,19 +67,50 @@ pub mod ffi {
 
     #[repr(C)]
     #[derive(Debug)]
+    pub struct SAppLogger {
+      func: *const c_void,
+      user_data: *const c_void,
+    }
+    impl Default for SAppLogger {
+      fn default() -> Self {
+        SAppLogger {
+          func: null(),
+          user_data: null(),
+        }
+      }
+    }
+    
+    #[repr(C)]
+    #[derive(Debug)]
+    pub struct SAppAllocator {
+      alloc: *const c_void,
+      free: *const c_void,
+      user_data: *const c_void,
+    }
+
+    impl Default for SAppAllocator {
+      fn default() -> Self {
+        SAppAllocator {
+          alloc: null(),
+          free: null(),
+          user_data: null(),
+        }
+      }
+    }
+
+    #[repr(C)]
+    #[derive(Debug)]
     pub struct SAppDesc {
         init_cb: *const c_void,
         frame_cb: *const c_void,
         cleanup_cb: *const c_void,
         event_cb: *const c_void,
-        fail_cb: *const c_void,
 
         user_data: *mut c_void,
         init_userdata_cb: extern fn(*mut c_void),
         frame_userdata_cb: extern fn(*mut c_void),
         cleanup_userdata_cb: extern fn(*mut c_void),
         event_userdata_cb: extern fn(*const SAppEvent, *mut c_void),
-        fail_userdata_cb: extern fn(*const c_char, *mut c_void),
 
         width: c_int,
         height: c_int,
@@ -88,15 +120,27 @@ pub mod ffi {
         fullscreen: bool,
         alpha: bool,
         window_title: *const c_char,
-        user_cursor: bool,
+        enable_clipboard: bool,
+        clipboard_size: c_int,
+        enable_dragndrop: bool,
+        max_dropped_files: c_int,
+        max_dropped_file_path_length: c_int,
+        icon: super::SAppIconDesc,
+        allocator: SAppAllocator,
+        logger: SAppLogger,
 
+        gl_force_gles2: bool,
+        gl_major_version: c_int,
+        gl_minor_version: c_int,
+        win32_console_utf8: bool,
+        win32_console_create: bool,
+        win32_console_attach: bool,
         html5_canvas_name: *const c_char,
         html5_canvas_resize: bool,
         html5_preserve_drawing_buffer: bool,
         html5_premultiplied_alpha: bool,
         html5_ask_leave_site: bool,
         ios_keyboard_resizes_canvas: bool,
-        gl_force_gles2: bool,
     }
 
     extern {
@@ -115,6 +159,7 @@ pub mod ffi {
         pub fn sapp_cancel_quit();
         pub fn sapp_quit();
         pub fn sapp_frame_count() -> u64;
+        pub fn sapp_frame_duration() -> f64;
 
         pub fn sapp_gles2() -> bool;
 
@@ -143,14 +188,12 @@ pub mod ffi {
             frame_cb: null(),
             cleanup_cb: null(),
             event_cb: null(),
-            fail_cb: null(),
 
             user_data: app_ptr as *mut c_void,
             init_userdata_cb,
             frame_userdata_cb,
             cleanup_userdata_cb,
             event_userdata_cb,
-            fail_userdata_cb,
 
             width: desc.width,
             height: desc.height,
@@ -160,15 +203,27 @@ pub mod ffi {
             fullscreen: desc.fullscreen,
             alpha: desc.alpha,
             window_title: window_title.into_raw(),
-            user_cursor: desc.user_cursor,
+            enable_clipboard: desc.enable_clipboard,
+            clipboard_size: desc.clipboard_size,
+            enable_dragndrop: desc.enable_dragndrop,
+            max_dropped_files: desc.max_dropped_files,
+            max_dropped_file_path_length: desc.max_dropped_file_path_length,
+            icon: desc.icon,
+            allocator: Default::default(),
+            logger: Default::default(),
 
+            gl_force_gles2: desc.gl_force_gles2,
+            gl_major_version: desc.gl_major_version,
+            gl_minor_version: desc.gl_minor_version,
+            win32_console_utf8: desc.win32_console_utf8,
+            win32_console_create: desc.win32_console_create,
+            win32_console_attach: desc.win32_console_attach,
             html5_canvas_name: canvas_name.into_raw(),
             html5_canvas_resize: desc.html5_canvas_resize,
             html5_preserve_drawing_buffer: desc.html5_preserve_drawing_buffer,
             html5_premultiplied_alpha: desc.html5_premultiplied_alpha,
             html5_ask_leave_site: desc.html5_ask_leave_site,
             ios_keyboard_resizes_canvas: desc.ios_keyboard_resizes_canvas,
-            gl_force_gles2: desc.gl_force_gles2,
         }
     }
 
@@ -435,6 +490,46 @@ pub struct SAppEvent {
     pub framebuffer_height: i32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SAppRange {
+  pub ptr: *const c_void,
+  pub size: usize,
+}
+
+impl Default for SAppRange {
+  fn default() -> Self {
+    SAppRange {
+      ptr: std::ptr::null(),
+      size: 0,
+    }
+  }
+}
+
+#[repr(C)]
+#[derive(Default, Clone, Copy, Debug)]
+pub struct SAppImageDesc {
+  pub width: i32,
+  pub height: i32,
+  pub pixels: SAppRange,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct SAppIconDesc {
+  pub sokol_default: bool,
+  pub images: [SAppImageDesc; ffi::SAPP_MAX_ICONIMAGES],
+}
+
+impl Default for SAppIconDesc {
+  fn default() -> Self {
+    return SAppIconDesc {
+      sokol_default: true,
+      images: [Default::default(); ffi::SAPP_MAX_ICONIMAGES],
+    };
+  }
+}
+
 #[derive(Default, Debug)]
 pub struct SAppDesc {
     pub width: i32,
@@ -445,15 +540,25 @@ pub struct SAppDesc {
     pub fullscreen: bool,
     pub alpha: bool,
     pub window_title: String,
-    pub user_cursor: bool,
+    pub enable_clipboard: bool,
+    pub clipboard_size: i32,
+    pub enable_dragndrop: bool,
+    pub max_dropped_files: i32,
+    pub max_dropped_file_path_length: i32,
+    pub icon: SAppIconDesc,
 
+    pub gl_force_gles2: bool,
+    pub gl_major_version: i32,
+    pub gl_minor_version: i32,
+    pub win32_console_utf8: bool,
+    pub win32_console_create: bool,
+    pub win32_console_attach: bool,
     pub html5_canvas_name: String,
     pub html5_canvas_resize: bool,
     pub html5_preserve_drawing_buffer: bool,
     pub html5_premultiplied_alpha: bool,
     pub html5_ask_leave_site: bool,
     pub ios_keyboard_resizes_canvas: bool,
-    pub gl_force_gles2: bool,
 }
 
 pub trait SApp {
@@ -489,7 +594,7 @@ pub trait SApp {
 }
 
 pub struct SAppImpl {
-    callbacks: Box<SApp>,
+    callbacks: Box<dyn SApp>,
     desc: SAppDesc,
 }
 
@@ -605,6 +710,12 @@ pub fn sapp_quit() {
 pub fn sapp_frame_count() -> u64 {
     unsafe {
         ffi::sapp_frame_count()
+    }
+}
+
+pub fn sapp_frame_duration() -> f64 {
+    unsafe {
+        ffi::sapp_frame_duration()
     }
 }
 

@@ -674,7 +674,7 @@ mod ffi {
         pub fn sg_isvalid() -> bool;
         pub fn sg_query_desc() -> SgDesc;
         pub fn sg_query_backend() -> super::SgBackend;
-        pub fn sg_query_feature(feature: super::SgFeature) -> bool;
+        pub fn sg_query_features() -> super::SgFeatures;
         pub fn sg_reset_state_cache();
 
         pub fn sg_make_buffer(desc: *const SgBufferDesc) -> super::SgBuffer;
@@ -784,21 +784,16 @@ pub enum SgBackend {
 
 #[repr(C)]
 #[derive(Debug)]
-pub enum SgFeature {
-    Instancing,
-    TextureCompressionDXT,
-    TextureCompressionPVRTC,
-    TextureCompressionATC,
-    TextureCompressionETC2,
-    TextureFloat,
-    TextureHalfFloat,
-    OriginBottomLeft,
-    OriginTopLeft,
-    MSAARenderTargets,
-    PackedVertexFormat102,
-    MultipleRenderTarget,
-    ImageType3D,
-    ImageTypeArray,
+pub struct SgFeatures {
+    pub Instancing: bool,
+    pub OriginTopLeft: bool,
+    pub MultipleRenderTarget: bool,
+    pub MSAARenderTargets: bool,
+    pub ImageType3D: bool,
+    pub ImageTypeArray: bool,
+    pub ImageClampToBorder: bool,
+    pub MRTIndependentBlendState: bool,
+    pub MRTIndependentWriteMask: bool,
 }
 
 #[repr(C)]
@@ -1455,9 +1450,9 @@ pub fn sg_query_backend() -> SgBackend {
     }
 }
 
-pub fn sg_query_feature(feature: SgFeature) -> bool {
+pub fn sg_query_features() -> SgFeatures {
     unsafe {
-        ffi::sg_query_feature(feature)
+        ffi::sg_query_features()
     }
 }
 

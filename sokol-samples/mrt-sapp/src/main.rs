@@ -32,7 +32,7 @@ impl MRT {
         }
         sg_destroy_image(self.offscreen_pass_desc.depth_stencil_attachment.image);
 
-        let offscreen_sample_count = if sg_query_feature(SgFeature::MSAARenderTargets) {
+        let offscreen_sample_count = if sg_query_features().MSAARenderTargets {
             MSAA_SAMPLES
         } else {
             1

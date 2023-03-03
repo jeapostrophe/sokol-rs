@@ -3,11 +3,11 @@
 members = [
     "sokol",
     "sokol-sys",
-    "sokol-imgui",
+    #"sokol-imgui",
     "sokol-stb",
     "sokol-samples/clear-sapp",
     "sokol-samples/cube-sapp",
-    "sokol-samples/imgui-sapp",
+    #"sokol-samples/imgui-sapp",
     "sokol-samples/mrt-sapp",
     "sokol-samples/saudio-sapp",
 ]
