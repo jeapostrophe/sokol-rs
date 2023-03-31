@@ -104,18 +104,66 @@ mod ffi {
 
     #[repr(C)]
     #[derive(Debug)]
+    struct SgGLContextDesc {
+        force_gles2: bool,
+    }
+
+    #[repr(C)]
+    #[derive(Debug)]
+    struct SgMetalContextDesc {
+        device: *const c_void,
+        renderpass_descriptor_cb: *const c_void,
+        renderpass_descriptor_userdata_cb: *const c_void,
+        drawable_cb: *const c_void,
+        drawable_userdata_cb: *const c_void,
+        user_data: *const c_void,
+    }
+
+    #[repr(C)]
+    #[derive(Debug)]
+    struct SgD3D11ContextDesc {
+        device: *const c_void,
+        device_context: *const c_void,
+        render_target_view_cb: *const c_void,
+        render_target_view_userdata_cb: *const c_void,
+        depth_stencil_view_cb: *const c_void,
+        depth_stencil_view_userdata_cb: *const c_void,
+        user_data: *const c_void,
+    }
+
+    #[repr(C)]
+    #[derive(Debug)]
+    struct SgWGPUContextDesc {
+        device: *const c_void,
+        render_view_cb: *const c_void,
+        render_view_userdata_cb: *const c_void,
+        resolve_view_cb: *const c_void,
+        resolve_view_userdata_cb: *const c_void,
+        depth_stencil_view_cb: *const c_void,
+        depth_stencil_view_userdata_cb: *const c_void,
+        user_data: *const c_void,
+    }
+
+    #[repr(C)]
+    #[derive(Debug)]
+    struct SgContextDesc {
+        color_format: super::SgPixelFormat,
+        depth_format: super::SgPixelFormat,
+        sample_count: c_int,
+        gl: SgGLContextDesc,
+        metal: SgMetalContextDesc,
+        d3d11: SgD3D11ContextDesc,
+        wgpu: SgWGPUContextDesc,
+    }
+
+    #[repr(C)]
+    #[derive(Debug)]
     pub struct SgDesc {
         _start_canary: u32,
         pub desc: super::SgDesc,
-        mtl_device: *const c_void,
-        mtl_renderpass_descriptor_cb: unsafe extern fn() -> *const c_void,
-        mtl_drawable_cb: unsafe extern fn() -> *const c_void,
-        mtl_global_uniform_buffer_size: c_int,
-        mtl_sampler_cache_size: c_int,
-        d3d11_device: *const c_void,
-        d3d11_device_context: *const c_void,
-        d3d11_render_target_view_cb: unsafe extern fn() -> *const c_void,
-        d3d11_depth_stencil_view_cb: unsafe extern fn() -> *const c_void,
+        allocator: SAppAllocator,
+        logger: SAppLogger,
+        context: SgContextDesc,
         _end_canary: u32,
     }
 
@@ -125,15 +173,9 @@ mod ffi {
                 SgDesc {
                     _start_canary: 0,
                     desc: *desc,
-                    mtl_device: sapp_metal_get_device(),
-                    mtl_renderpass_descriptor_cb: sapp_metal_get_renderpass_descriptor,
-                    mtl_drawable_cb: sapp_metal_get_drawable,
-                    mtl_global_uniform_buffer_size: 0,
-                    mtl_sampler_cache_size: 0,
-                    d3d11_device: sapp_d3d11_get_device(),
-                    d3d11_device_context: sapp_d3d11_get_device_context(),
-                    d3d11_render_target_view_cb: sapp_d3d11_get_render_target_view,
-                    d3d11_depth_stencil_view_cb: sapp_d3d11_get_depth_stencil_view,
+                    allocator: Default::default(),
+                    logger: Default::default(),
+                    context: sapp_sgcontext(),
                     _end_canary: 0,
                 }
             }
@@ -669,6 +711,7 @@ mod ffi {
     }
 
     extern {
+        fn sapp_sgcontext() -> SgContextDesc;
         pub fn sg_setup(desc: *const SgDesc);
         pub fn sg_shutdown();
         pub fn sg_isvalid() -> bool;
@@ -1266,7 +1309,11 @@ pub struct SgDesc {
     pub pipeline_pool_size: i32,
     pub pass_pool_size: i32,
     pub context_pool_size: i32,
-    pub gl_force_gles2: bool,
+    pub uniform_buffer_size: i32,
+    pub staging_buffer_size: i32,
+    pub sampler_cache_size: i32,
+    pub max_commit_listeners: i32,
+    pub disable_validation: bool,
 }
 
 #[derive(Default, Debug)]
