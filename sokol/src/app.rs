@@ -68,13 +68,13 @@ pub mod ffi {
     #[repr(C)]
     #[derive(Debug)]
     pub struct SAppLogger {
-      func: *const c_void,
+      func: unsafe extern fn(),
       user_data: *const c_void,
     }
     impl Default for SAppLogger {
       fn default() -> Self {
         SAppLogger {
-          func: null(),
+          func: slog_func,
           user_data: null(),
         }
       }
@@ -144,6 +144,8 @@ pub mod ffi {
     }
 
     extern {
+        fn slog_func();
+
         /// sokol entry point (compiled with SOKOL_NO_ENTRY)
         pub fn sapp_run(desc: *const SAppDesc) -> c_int;
 
