@@ -205,16 +205,13 @@ impl SApp for Cube {
                 },
                 shader: shd,
                 index_type: SgIndexType::UInt16,
-                depth_stencil: SgDepthStencilState {
-                    depth_compare_func: SgCompareFunc::LessEqual,
-                    depth_write_enabled: true,
+                depth: SgDepthState {
+                    compare: SgCompareFunc::LessEqual,
+                    write_enabled: true,
                     ..Default::default()
                 },
-                rasterizer: SgRasterizerState {
-                    cull_mode: SgCullMode::Back,
-                    sample_count: SAMPLE_COUNT,
-                    ..Default::default()
-                },
+                cull_mode: SgCullMode::Back,
+                sample_count: SAMPLE_COUNT,
                 ..Default::default()
             }
         );

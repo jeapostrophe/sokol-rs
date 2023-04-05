@@ -295,22 +295,13 @@ impl SApp for MRT {
                 },
                 shader: cube_shd,
                 index_type: SgIndexType::UInt16,
-                depth_stencil: SgDepthStencilState {
-                    depth_compare_func: SgCompareFunc::LessEqual,
-                    depth_write_enabled: true,
+                depth: SgDepthState {
+                    compare: SgCompareFunc::LessEqual,
+                    write_enabled: true,
                     ..Default::default()
                 },
-                blend: SgBlendState {
-                    color_attachment_count: 3,
-                    color_format: SgPixelFormat::RGBA8,
-                    depth_format: SgPixelFormat::Depth,
-                    ..Default::default()
-                },
-                rasterizer: SgRasterizerState {
-                    cull_mode: SgCullMode::Back,
-                    sample_count: MSAA_SAMPLES,
-                    ..Default::default()
-                },
+                cull_mode: SgCullMode::Back,
+                sample_count: MSAA_SAMPLES,
                 ..Default::default()
             }
         );
@@ -505,10 +496,6 @@ impl SApp for MRT {
                 },
                 shader: fsq_shd,
                 primitive_type: SgPrimitiveType::TriangleStrip,
-                rasterizer: SgRasterizerState {
-                    sample_count: MSAA_SAMPLES,
-                    ..Default::default()
-                },
                 ..Default::default()
             }
         );
@@ -619,10 +606,6 @@ impl SApp for MRT {
                     ..Default::default()
                 },
             }),
-            rasterizer: SgRasterizerState {
-                sample_count: MSAA_SAMPLES,
-                ..Default::default()
-            },
             ..Default::default()
         });
 

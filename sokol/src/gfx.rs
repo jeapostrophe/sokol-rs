@@ -14,7 +14,11 @@ mod ffi {
     use std::os::raw::c_void;
     use std::ptr::null;
 
+    type c_size_t = usize;
+
     use crate::app::ffi::*;
+
+    use super::SgFaceWinding;
 
     const _SG_INVALID_ID: usize = 0;
     const _SG_NUM_SHADER_STAGES: usize = 2;
@@ -184,16 +188,24 @@ mod ffi {
 
     #[repr(C)]
     #[derive(Debug)]
+    struct SgRange {
+        ptr: *const c_void,
+        size: c_size_t,
+    }
+
+    #[repr(C)]
+    #[derive(Debug)]
     pub struct SgBufferDesc {
         _start_canary: u32,
-        size: c_int,
+        size: c_size_t,
         buffer_type: super::SgBufferType,
         usage: super::SgUsage,
-        content: *const c_void,
+        data: SgRange,
         label: *const c_char,
         gl_buffers: [u32; SG_NUM_INFLIGHT_FRAMES],
         mtl_buffers: [*const c_void; SG_NUM_INFLIGHT_FRAMES],
         d3d11_buffer: *const c_void,
+        wgpu_buffer: *const c_void,
         _end_canary: u32,
     }
 
@@ -204,17 +216,19 @@ mod ffi {
             } else {
                 null()
             };
-
+            let ptrv = ptr as *const c_void;
+            
             SgBufferDesc {
                 _start_canary: 0,
-                size: desc.size as c_int,
+                size: desc.size as c_size_t,
                 buffer_type: desc.buffer_type,
                 usage: desc.usage,
-                content: ptr as *const c_void,
+                data: SgRange { ptr: ptrv, size: desc.size as c_size_t },
                 label: null(),
                 gl_buffers: [0, 0],
                 mtl_buffers: [null(), null()],
                 d3d11_buffer: null(),
+                wgpu_buffer: null(),
                 _end_canary: 0,
             }
         }
@@ -394,7 +408,8 @@ mod ffi {
     #[repr(C)]
     #[derive(Copy, Clone, Default, Debug)]
     struct SgShaderUniformBlockDesc {
-        size: c_int,
+        size: c_size_t,
+        layout: super::SgUniformLayout,
         uniforms: [SgShaderUniformDesc; SG_MAX_UB_MEMBERS],
     }
 
@@ -403,6 +418,7 @@ mod ffi {
     struct SgShaderImageDesc {
         name: *const c_char,
         image_type: super::SgImageType,
+        sampler_type: super::SgSamplerType,
     }
 
     impl Default for SgShaderImageDesc {
@@ -410,6 +426,7 @@ mod ffi {
             SgShaderImageDesc {
                 name: null(),
                 image_type: super::SgImageType::_Default,
+                sampler_type: super::SgSamplerType::_Default,
             }
         }
     }
@@ -418,9 +435,9 @@ mod ffi {
     #[derive(Debug)]
     struct SgShaderStageDesc {
         source: *const c_char,
-        byte_code: *const u8,
-        byte_code_size: c_int,
+        bytecode: SgRange,
         entry: *const c_char,
+        d3d11_target: *const c_char,
         uniform_blocks: [SgShaderUniformBlockDesc; SG_MAX_SHADERSTAGE_UBS],
         images: [SgShaderImageDesc; SG_MAX_SHADERSTAGE_IMAGES],
     }
@@ -429,9 +446,9 @@ mod ffi {
         fn default() -> Self {
             SgShaderStageDesc {
                 source: null(),
-                byte_code: null(),
-                byte_code_size: 0,
+                bytecode: SgRange { ptr: null(), size: 0 },
                 entry: null(),
+                d3d11_target: null(),
                 uniform_blocks: [
                     Default::default(); SG_MAX_SHADERSTAGE_UBS
                 ],
@@ -463,7 +480,7 @@ mod ffi {
                     null()
                 }
             };
-
+            
             let (vs_bytes, vs_size) = Self::collect_bytecode(desc.vs.byte_code);
             let (fs_bytes, fs_size) = Self::collect_bytecode(desc.fs.byte_code);
 
@@ -472,15 +489,13 @@ mod ffi {
                 attrs: Default::default(),
                 vs: SgShaderStageDesc {
                     source: from_str(desc.vs.source),
-                    byte_code: vs_bytes,
-                    byte_code_size: vs_size,
+                    bytecode: SgRange { ptr: vs_bytes as *const c_void, size: vs_size as c_size_t },
                     entry: from_str(desc.vs.entry),
                     ..Default::default()
                 },
                 fs: SgShaderStageDesc {
                     source: from_str(desc.fs.source),
-                    byte_code: fs_bytes,
-                    byte_code_size: fs_size,
+                    bytecode: SgRange { ptr: fs_bytes as *const c_void, size: fs_size as c_size_t },
                     entry: from_str(desc.fs.entry),
                     ..Default::default()
                 },
@@ -540,7 +555,7 @@ mod ffi {
                                   src: &[super::SgShaderUniformBlockDesc]) {
             for (idx, ub) in src.iter().enumerate() {
                 let dst = &mut desc.uniform_blocks[idx];
-                dst.size = ub.size;
+                dst.size = ub.size as c_size_t;
                 SgShaderDesc::collect_uniforms(dst, &ub.uniforms);
             }
         }
@@ -559,7 +574,7 @@ mod ffi {
     }
 
     #[repr(C)]
-    #[derive(Default, Debug)]
+    #[derive(Default, Debug, Copy, Clone)]
     pub struct SgBufferLayoutDesc {
         pub stride: c_int,
         pub step_func: super::SgVertexStep,
@@ -567,7 +582,7 @@ mod ffi {
     }
 
     #[repr(C)]
-    #[derive(Debug)]
+    #[derive(Debug, Copy, Clone)]
     pub struct SgVertexAttrDesc {
         buffer_index: c_int,
         offset: c_int,
@@ -591,64 +606,70 @@ mod ffi {
         attrs: [SgVertexAttrDesc; SG_MAX_VERTEX_ATTRIBUTES],
     }
 
-    #[repr(C)]
-    #[derive(Debug)]
-    pub struct SgBlendState {
-        enabled: bool,
-        src_factor_rgb: super::SgBlendFactor,
-        dst_factor_rgb: super::SgBlendFactor,
-        op_rgb: super::SgBlendOp,
-        src_factor_alpha: super::SgBlendFactor,
-        dst_factor_alpha: super::SgBlendFactor,
-        op_alpha: super::SgBlendOp,
-        color_write_mask: u8,
-        color_attachment_count: c_int,
-        color_format: super::SgPixelFormat,
-        depth_format: super::SgPixelFormat,
-        blend_color: [f32; 4],
+    impl SgLayoutDesc {
+        pub fn make(desc: &super::SgLayoutDesc) -> SgLayoutDesc {
+            let mut buffers = [Default::default(); SG_MAX_SHADERSTAGE_BUFFERS];
+            let mut attrs = [Default::default(); SG_MAX_VERTEX_ATTRIBUTES];
+            for (idx, buf) in desc.buffers.iter().enumerate() {
+                buffers[idx] = SgBufferLayoutDesc {
+                    stride: buf.stride as c_int,
+                    step_func: buf.step_func,
+                    step_rate: buf.step_rate,
+                };
+            }
+            for (idx, attr) in desc.attrs.iter().enumerate() {
+                attrs[idx] = SgVertexAttrDesc {
+                    buffer_index: attr.buffer_index,
+                    offset: attr.offset,
+                    format: attr.format,
+                };
+            }
+            SgLayoutDesc { buffers, attrs }
+        }
     }
 
     #[repr(C)]
     #[derive(Debug)]
     pub struct SgPipelineDesc {
         _start_canary: u32,
-        layout: SgLayoutDesc,
         shader: super::SgShader,
+        layout: SgLayoutDesc,
+        depth: super::SgDepthState,
+        stencil: super::SgStencilState,
+        color_count: c_int,
+        colors: [super::SgColorState; SG_MAX_COLOR_ATTACHMENTS],
         primitive_type: super::SgPrimitiveType,
         index_type: super::SgIndexType,
-        depth_stencil: super::SgDepthStencilState,
-        blend: SgBlendState,
-        rasterizer: super::SgRasterizerState,
+        cull_mode: super::SgCullMode,
+        face_winding: SgFaceWinding,
+        sample_count: c_int,
+        blend_color: super::SgColor,
+        alpha_to_coverage_enabled: bool,
         label: *const c_char,
         _end_canary: u32,
     }
 
     impl SgPipelineDesc {
         pub fn make(desc: &super::SgPipelineDesc) -> SgPipelineDesc {
-            let blend = desc.blend;
-
+            let mut colors = [Default::default(); SG_MAX_COLOR_ATTACHMENTS];
+            for (idx, color) in (*desc).colors.iter().enumerate() {
+                colors[idx] = *color;
+            }
             let mut pip = SgPipelineDesc {
                 _start_canary: 0,
-                layout: Default::default(),
                 shader: (*desc).shader,
+                layout: SgLayoutDesc::make(&(*desc).layout),
+                depth: (*desc).depth,
+                stencil: (*desc).stencil,
+                color_count: (*desc).colors.len() as c_int,
+                colors,
                 primitive_type: (*desc).primitive_type,
                 index_type: (*desc).index_type,
-                depth_stencil: (*desc).depth_stencil,
-                blend: SgBlendState {
-                    enabled: blend.enabled,
-                    src_factor_rgb: blend.src_factor_rgb,
-                    dst_factor_rgb: blend.dst_factor_rgb,
-                    op_rgb: blend.op_rgb,
-                    src_factor_alpha: blend.src_factor_alpha,
-                    dst_factor_alpha: blend.dst_factor_alpha,
-                    op_alpha: blend.op_alpha,
-                    color_write_mask: blend.color_write_mask.bits(),
-                    color_attachment_count: blend.color_attachment_count,
-                    color_format: blend.color_format,
-                    depth_format: blend.depth_format,
-                    blend_color: blend.blend_color,
-                },
-                rasterizer: (*desc).rasterizer,
+                cull_mode: (*desc).cull_mode,
+                face_winding: (*desc).face_winding,
+                sample_count: (*desc).sample_count,
+                blend_color: (*desc).blend_color,
+                alpha_to_coverage_enabled: (*desc).alpha_to_coverage_enabled,
                 label: null(),
                 _end_canary: 0,
             };
@@ -822,6 +843,8 @@ pub enum SgBackend {
     D3D11,
     MetalIOS,
     MetalMacOS,
+    MetalSimulator,
+    WGPU,
     Dummy,
 }
 
@@ -847,6 +870,7 @@ pub enum SgResourceState {
     Valid,
     Failed,
     Invalid,
+    ForceU32 = 0x7FFFFFFF,
 }
 
 #[repr(C)]
@@ -856,6 +880,8 @@ pub enum SgUsage {
     Immutable,
     Dynamic,
     Stream,
+    Num,
+    ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgUsage {
@@ -870,6 +896,8 @@ pub enum SgBufferType {
     _Default,
     VertexBuffer,
     IndexBuffer,
+    Num,
+    ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgBufferType {
@@ -885,6 +913,8 @@ pub enum SgIndexType {
     None,
     UInt16,
     UInt32,
+    Num,
+    ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgIndexType {
@@ -901,11 +931,28 @@ pub enum SgImageType {
     TextureCube,
     Texture3D,
     TextureArray,
+    Num,
+    ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgImageType {
     fn default() -> Self {
         SgImageType::_Default
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub enum SgSamplerType {
+    _Default,
+    Float,
+    SInt,
+    UInt,
+}
+
+impl Default for SgSamplerType {
+    fn default() -> Self {
+        SgSamplerType::_Default
     }
 }
 
@@ -918,6 +965,8 @@ pub enum SgCubeFace {
     NegY,
     PosZ,
     NegZ,
+    Num,
+    ForceU32 = 0x7FFFFFFF,
 }
 
 #[repr(C)]
@@ -925,6 +974,7 @@ pub enum SgCubeFace {
 pub enum SgShaderStage {
     Vertex,
     Fragment,
+    ForceU32 = 0x7FFFFFFF,
 }
 
 #[repr(C)]
@@ -1022,6 +1072,8 @@ pub enum SgPrimitiveType {
     LineStrip,
     Triangles,
     TriangleStrip,
+    Num,
+    ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgPrimitiveType {
@@ -1040,6 +1092,8 @@ pub enum SgFilter {
     NearestMipmapLinear,
     LinearMipmapNearest,
     LinearMipmapLinear,
+    Num,
+    ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgFilter {
@@ -1054,12 +1108,32 @@ pub enum SgWrap {
     _Default,
     Repeat,
     ClampToEdge,
+    ClampToBorder,
     MirrorRepeat,
+    Num,
+    ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgWrap {
     fn default() -> Self {
         SgWrap::_Default
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub enum SgBorderColor {
+    _Default,
+    TransparentBlack,
+    OpaqueBlack,
+    OpaqueWhite,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
+}
+
+impl Default for SgBorderColor {
+    fn default() -> Self {
+        SgBorderColor::_Default
     }
 }
 
@@ -1077,9 +1151,15 @@ pub enum SgVertexFormat {
     UByte4N,
     Short2,
     Short2N,
+    UShort2N,
     Short4,
     Short4N,
+    UShort4N,
     UInt10N2,
+    Half2,
+    Half4,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgVertexFormat {
@@ -1094,6 +1174,8 @@ pub enum SgVertexStep {
     _Default,
     PerVertex,
     PerInstance,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgVertexStep {
@@ -1110,7 +1192,13 @@ pub enum SgUniformType {
     Float2,
     Float3,
     Float4,
+    Int,
+    Int2,
+    Int3,
+    Int4,
     Mat4,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgUniformType {
@@ -1121,11 +1209,30 @@ impl Default for SgUniformType {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
+pub enum SgUniformLayout {
+    _Default,
+    Native,
+    Std140,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
+}
+
+impl Default for SgUniformLayout {
+    fn default() -> Self {
+        SgUniformLayout::_Default
+    }
+}
+
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
 pub enum SgCullMode {
     _Default,
     None,
     Front,
     Back,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgCullMode {
@@ -1140,6 +1247,8 @@ pub enum SgFaceWinding {
     _Default,
     CCW,
     CW,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgFaceWinding {
@@ -1160,6 +1269,8 @@ pub enum SgCompareFunc {
     NotEqual,
     GreaterEqual,
     Always,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgCompareFunc {
@@ -1180,6 +1291,8 @@ pub enum SgStencilOp {
     Invert,
     IncrementWrap,
     DecrementWrap,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgStencilOp {
@@ -1207,6 +1320,8 @@ pub enum SgBlendFactor {
     OneMinusBlendColor,
     BlendAlpha,
     OneMinusBlendAlpha,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgBlendFactor {
@@ -1222,6 +1337,8 @@ pub enum SgBlendOp {
     Add,
     Subtract,
     ReverseSubtract,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgBlendOp {
@@ -1232,14 +1349,25 @@ impl Default for SgBlendOp {
 
 bitflags! {
     #[derive(Default)]
-    pub struct SgColorMask: u8 {
+    pub struct SgColorMask: u32 {
+        const _Default = 0x0;
         const NONE = 0x10;
         const R = 0x01;
         const G = 0x02;
+        const RG = 0x03;
         const B = 0x04;
-        const A = 0x08;
+        const RB = 0x05;
+        const GB = 0x06;
         const RGB = 0x07;
-        const RGBA = 0x0f;
+        const A = 0x08;
+        const RA = 0x09;
+        const GA = 0xA;
+        const RGA = 0xB;
+        const BA = 0xC;
+        const RBA = 0xD;
+        const GBA = 0xE;
+        const RGBA = 0xF;
+        const _ForceU32 = 0x7FFFFFFF;
     }
 }
 
@@ -1250,6 +1378,8 @@ pub enum SgAction {
     Clear,
     Load,
     DontCare,
+    _Num,
+    _ForceU32 = 0x7FFFFFFF,
 }
 
 impl Default for SgAction {
@@ -1262,11 +1392,13 @@ impl Default for SgAction {
     structs
 */
 
+pub type SgColor = [f32; 4];
+
 #[repr(C)]
 #[derive(Copy, Clone, Default, Debug)]
 pub struct SgColorAttachmentAction {
     pub action: SgAction,
-    pub val: [f32; 4],
+    pub val: SgColor,
 }
 
 #[repr(C)]
@@ -1390,7 +1522,7 @@ pub struct SgShaderDesc<'a> {
     pub fs: SgShaderStageDesc<'a>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct SgBufferLayoutDesc {
     pub stride: usize,
     pub step_func: SgVertexStep,
@@ -1398,28 +1530,7 @@ pub struct SgBufferLayoutDesc {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Default, Debug)]
-pub struct SgStencilState {
-    pub fail_op: SgStencilOp,
-    pub depth_fail_op: SgStencilOp,
-    pub pass_op: SgStencilOp,
-    pub compare_func: SgCompareFunc,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Default, Debug)]
-pub struct SgDepthStencilState {
-    pub stencil_front: SgStencilState,
-    pub stencil_back: SgStencilState,
-    pub depth_compare_func: SgCompareFunc,
-    pub depth_write_enabled: bool,
-    pub stencil_enabled: bool,
-    pub stencil_read_mask: u8,
-    pub stencil_write_mask: u8,
-    pub stencil_ref: u8,
-}
-
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct SgBlendState {
     pub enabled: bool,
     pub src_factor_rgb: SgBlendFactor,
@@ -1428,26 +1539,48 @@ pub struct SgBlendState {
     pub src_factor_alpha: SgBlendFactor,
     pub dst_factor_alpha: SgBlendFactor,
     pub op_alpha: SgBlendOp,
-    pub color_write_mask: SgColorMask,
-    pub color_attachment_count: i32,
-    pub color_format: SgPixelFormat,
-    pub depth_format: SgPixelFormat,
-    pub blend_color: [f32; 4],
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Default, Debug)]
-pub struct SgRasterizerState {
-    pub alpha_to_coverage_enabled: bool,
-    pub cull_mode: SgCullMode,
-    pub face_winding: SgFaceWinding,
-    pub sample_count: i32,
-    pub depth_bias: f32,
-    pub depth_bias_slope_scale: f32,
-    pub depth_bias_clamp: f32,
+#[derive(Debug, Copy, Clone, Default)]
+pub struct SgColorState {
+    pub pixel_format: SgPixelFormat,
+    pub write_mask: SgColorMask,
+    pub blend: SgBlendState,
 }
 
-#[derive(Default, Debug)]
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct SgDepthState {
+    pub pixel_format: SgPixelFormat,
+    pub compare: SgCompareFunc,
+    pub write_enabled: bool,
+    pub bias: f32,
+    pub bias_slop_scale: f32,
+    pub bias_clamp: f32,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct SgStencilFaceState {
+    pub compare: SgCompareFunc,
+    pub fail_op: SgStencilOp,
+    pub depth_fail_op: SgStencilOp,
+    pub pass_op: SgStencilOp,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct SgStencilState {
+    pub enabled: bool,
+    pub front: SgStencilFaceState,
+    pub back: SgStencilFaceState,
+    pub read_mask: u8,
+    pub write_mask: u8,
+    pub stencil_ref: u8,
+}
+
+#[derive(Default, Debug, Copy, Clone)]
 pub struct SgVertexAttrDesc {
     pub buffer_index: i32,
     pub offset: i32,
@@ -1464,11 +1597,16 @@ pub struct SgLayoutDesc {
 pub struct SgPipelineDesc {
     pub shader: SgShader,
     pub layout: SgLayoutDesc,
+    pub depth: SgDepthState,
+    pub stencil: SgStencilState,
+    pub colors: Vec<SgColorState>,
     pub primitive_type: SgPrimitiveType,
     pub index_type: SgIndexType,
-    pub depth_stencil: SgDepthStencilState,
-    pub blend: SgBlendState,
-    pub rasterizer: SgRasterizerState,
+    pub cull_mode: SgCullMode,
+    pub face_winding: SgFaceWinding,
+    pub sample_count: i32,
+    pub blend_color: SgColor,
+    pub alpha_to_coverage_enabled: bool,
 }
 
 #[repr(C)]
