@@ -7,6 +7,7 @@ use std::fmt;
 use std::os::raw::c_void;
 
 mod ffi {
+    use std::borrow::Borrow;
     use std::ffi::CString;
     use std::fmt;
     use std::os::raw::c_char;
@@ -18,6 +19,7 @@ mod ffi {
 
     use crate::app::ffi::*;
 
+    use super::SG_CUBEFACE_NUM;
     use super::SgFaceWinding;
 
     const _SG_INVALID_ID: usize = 0;
@@ -187,11 +189,21 @@ mod ffi {
     }
 
     #[repr(C)]
-    #[derive(Debug)]
-    struct SgRange {
-        ptr: *const c_void,
-        size: c_size_t,
+    #[derive(Copy, Clone, Debug)]
+    pub struct SgRange {
+        pub ptr: *const c_void,
+        pub size: c_size_t,
     }
+
+    impl Default for SgRange {
+        fn default() -> Self {
+            Self {
+                ptr: null(),
+                size: 0,
+            }
+        }
+    }
+        
 
     #[repr(C)]
     #[derive(Debug)]
@@ -235,72 +247,41 @@ mod ffi {
     }
 
     #[repr(C)]
-    #[derive(Copy, Clone, Debug)]
-    struct SgSubImageContent {
-        ptr: *const c_void,
-        size: c_int,
+    #[derive(Debug)]
+    pub struct SgImageData {
+        subimage: [[SgRange; SG_MAX_MIPMAPS]; super::SG_CUBEFACE_NUM],
     }
 
-    impl Default for SgSubImageContent {
+    impl Default for SgImageData {
         fn default() -> Self {
             Self {
-                ptr: null(),
-                size: 0,
-            }
-        }
-    }
-
-    #[repr(C)]
-    pub struct SgImageContent {
-        subimage: [SgSubImageContent; 6 * SG_MAX_MIPMAPS],
-    }
-
-    impl Default for SgImageContent {
-        fn default() -> Self {
-            Self {
-                subimage: [
-                    SgSubImageContent {
+                subimage: [ [
+                    SgRange {
                         ..Default::default()
-                    }; 96
-                ]
+                    }; SG_MAX_MIPMAPS
+                ]; super::SG_CUBEFACE_NUM ],
             }
         }
     }
 
-    // We can't [derive(Debug)] SgImageContent because fixed-arrays don't impl
-    // Debug if their size is over 32.
-    impl fmt::Debug for SgImageContent {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            struct Helper([SgSubImageContent; 6 * SG_MAX_MIPMAPS]);
-
-            impl fmt::Debug for Helper {
-                fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    fmt::Debug::fmt(&self.0[..], formatter)
-                }
-            }
-
-            f.debug_struct("SgImageContent")
-                .field("subimage", &Helper(self.subimage))
-                .finish()
-        }
-    }
-
-    impl SgImageContent {
-        pub fn make<T>(content: Option<&[(*const T, i32)]>) -> SgImageContent {
-            let mut cnt = SgImageContent {
+    impl SgImageData {
+        pub fn make<T>(content: Option<Vec<Vec<(*const T, i32)>>>) -> SgImageData {
+            let mut cnt = SgImageData {
                 ..Default::default()
             };
 
             match content {
                 None => {}
                 Some(content) => {
-                    for (idx, (data, size)) in content.iter().enumerate() {
-                        let ptr = *data as *const T;
+                    for (x, v) in content.iter().enumerate() {
+                        for (y, (data, size)) in v.iter().enumerate() {
+                            let ptr = *data as *const T;
 
-                        cnt.subimage[idx] = SgSubImageContent {
-                            ptr: ptr as *const c_void,
-                            size: *size as i32,
-                        };
+                            cnt.subimage[x][y] = SgRange {
+                                ptr: ptr as *const c_void,
+                                size: *size as usize,
+                            };
+                        }
                     }
                 }
             };
@@ -317,7 +298,7 @@ mod ffi {
         render_target: bool,
         width: c_int,
         height: c_int,
-        depth_or_layers: c_int,
+        num_slices: c_int,
         num_mipmaps: c_int,
         usage: super::SgUsage,
         pixel_format: super::SgPixelFormat,
@@ -327,26 +308,30 @@ mod ffi {
         wrap_u: super::SgWrap,
         wrap_v: super::SgWrap,
         wrap_w: super::SgWrap,
+        border_color: super::SgBorderColor,
         max_anisotropy: u32,
         min_lod: f32,
         max_lod: f32,
-        content: SgImageContent,
+        data: SgImageData,
         label: *const c_char,
         gl_textures: [u32; SG_NUM_INFLIGHT_FRAMES],
+        gl_texture_target: u32,
         mtl_textures: [*const c_void; SG_NUM_INFLIGHT_FRAMES],
         d3d11_texture: *const c_void,
+        d3d11_shader_resource_view: *const c_void,
+        wgpu_texture: *const c_void,
         _end_canary: u32,
     }
 
     impl SgImageDesc {
-        pub fn make<T>(content: Option<&[(*const T, i32)]>, desc: &super::SgImageDesc) -> SgImageDesc {
+        pub fn make<T>(content: Option<Vec<Vec<(*const T, i32)>>>, desc: &super::SgImageDesc) -> SgImageDesc {
             SgImageDesc {
                 _start_canary: 0,
                 image_type: desc.image_type,
                 render_target: desc.render_target,
                 width: desc.width,
                 height: desc.height,
-                depth_or_layers: desc.depth_or_layers,
+                num_slices: desc.num_slices,
                 num_mipmaps: desc.num_mipmaps,
                 usage: desc.usage,
                 pixel_format: desc.pixel_format,
@@ -356,14 +341,18 @@ mod ffi {
                 wrap_u: desc.wrap_u,
                 wrap_v: desc.wrap_v,
                 wrap_w: desc.wrap_w,
+                border_color: desc.border_color,
                 max_anisotropy: desc.max_anisotropy,
                 min_lod: desc.min_lod,
                 max_lod: desc.max_lod,
-                content: SgImageContent::make(content),
+                data: SgImageData::make(content),
                 label: null(),
                 gl_textures: [0; SG_NUM_INFLIGHT_FRAMES],
+                gl_texture_target: 0,
                 mtl_textures: [null(); SG_NUM_INFLIGHT_FRAMES],
                 d3d11_texture: null(),
+                d3d11_shader_resource_view: null(),
+                wgpu_texture: null(),
                 _end_canary: 0,
             }
         }
@@ -753,8 +742,8 @@ mod ffi {
         pub fn sg_destroy_pipeline(pip: super::SgPipeline);
         pub fn sg_destroy_pass(pass: super::SgPass);
 
-        pub fn sg_update_buffer(buf: super::SgBuffer, data_ptr: *const c_void, data_size: c_int);
-        pub fn sg_update_image(img: super::SgImage, data: *const SgImageContent);
+        pub fn sg_update_buffer(buf: super::SgBuffer, data: *const SgRange);
+        pub fn sg_update_image(img: super::SgImage, data: *const SgImageData);
         pub fn sg_append_buffer(buf: super::SgBuffer, data_ptr: *const c_void, data_size: c_int) -> c_int;
         pub fn sg_query_buffer_overflow(buf: super::SgBuffer) -> bool;
 
@@ -968,6 +957,7 @@ pub enum SgCubeFace {
     Num,
     ForceU32 = 0x7FFFFFFF,
 }
+const SG_CUBEFACE_NUM: usize = SgCubeFace::Num as usize;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -1463,7 +1453,7 @@ pub struct SgImageDesc {
     pub render_target: bool,
     pub width: i32,
     pub height: i32,
-    pub depth_or_layers: i32,
+    pub num_slices: i32,
     pub num_mipmaps: i32,
     pub usage: SgUsage,
     pub pixel_format: SgPixelFormat,
@@ -1473,12 +1463,13 @@ pub struct SgImageDesc {
     pub wrap_u: SgWrap,
     pub wrap_v: SgWrap,
     pub wrap_w: SgWrap,
+    pub border_color: SgBorderColor,
     pub max_anisotropy: u32,
     pub min_lod: f32,
     pub max_lod: f32,
 }
 
-pub const SG_IMAGE_CONTENT_NONE: Option<&[(*const u8, i32)]> = None;
+pub const SG_IMAGE_CONTENT_NONE: Option<Vec<Vec<(*const u8, i32)>>> = None;
 
 #[derive(Default, Debug)]
 pub struct SgShaderAttrDesc<'a> {
@@ -1704,7 +1695,7 @@ pub fn sg_make_buffer<T>(content: Option<&T>, desc: &SgBufferDesc) -> SgBuffer {
     }
 }
 
-pub fn sg_make_image<T>(content: Option<&[(*const T, i32)]>, desc: &SgImageDesc) -> SgImage {
+pub fn sg_make_image<T>(content: Option<Vec<Vec<(*const T, i32)>>>, desc: &SgImageDesc) -> SgImage {
     unsafe {
         ffi::sg_make_image(&ffi::SgImageDesc::make(content, desc))
     }
@@ -1758,16 +1749,16 @@ pub fn sg_destroy_pass(pass: SgPass) {
     }
 }
 
-pub fn sg_update_buffer<T>(buf: SgBuffer, content: &T, content_size: i32) {
+pub fn sg_update_buffer<T>(buf: SgBuffer, content: &T, size: i32) {
     unsafe {
         let ptr = content as *const T;
-        ffi::sg_update_buffer(buf, ptr as *const c_void, content_size);
+        ffi::sg_update_buffer(buf, &ffi::SgRange { ptr: ptr as *const c_void, size: size as usize });
     }
 }
 
-pub fn sg_update_image<T>(img: SgImage, content: &[(*const T, i32)]) {
+pub fn sg_update_image<T>(img: SgImage, content: Vec<Vec<(*const T, i32)>>) {
     unsafe {
-        ffi::sg_update_image(img, &ffi::SgImageContent::make(Some(content)));
+        ffi::sg_update_image(img, &ffi::SgImageData::make(Some(content)));
     }
 }
 
