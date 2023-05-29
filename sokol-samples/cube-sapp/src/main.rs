@@ -278,7 +278,7 @@ fn main() {
         ..Default::default()
     };
 
-    let title = format!("cube-sapp.rs ({:?})", sg_query_backend());
+    let title = format!("cube-sapp.rs");
 
     let exit_code = sapp_run(
         cube,

@@ -42,7 +42,7 @@ fn main() {
         }
     };
 
-    let title = format!("clear-sapp.rs ({:?})", sg_query_backend());
+    let title = format!("clear-sapp.rs");
 
     let exit_code = sapp_run(
         clear_app,
