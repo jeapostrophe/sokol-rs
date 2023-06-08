@@ -768,8 +768,7 @@ mod ffi {
         pub fn sg_apply_bindings(bindings: *const SgBindings);
         pub fn sg_apply_uniforms(stage: super::SgShaderStage,
                                  ub_index: c_int,
-                                 data: *const c_void,
-                                 num_bytes: c_int);
+                                 data: *const SgRange);
         pub fn sg_draw(base_element: c_int,
                        num_elements: c_int,
                        num_instances: c_int);
@@ -1853,12 +1852,15 @@ pub fn sg_apply_uniforms<T>(stage: SgShaderStage,
                             data: &T,
                             num_bytes: i32) {
     let ptr = data as *const T;
+    let range = ffi::SgRange {
+        ptr: ptr as *const c_void,
+       size: num_bytes as usize,
+    };
 
     unsafe {
         ffi::sg_apply_uniforms(stage,
                                ub_index,
-                               ptr as *const c_void,
-                               num_bytes);
+                               &range as *const ffi::SgRange);
     }
 }
 
