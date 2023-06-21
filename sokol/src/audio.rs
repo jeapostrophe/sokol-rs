@@ -7,6 +7,7 @@ pub mod ffi {
     use std::os::raw::c_int;
     use std::os::raw::c_void;
     use std::ptr::null;
+    use crate::app::ffi::*;
 
     #[repr(C)]
     #[derive(Debug)]
@@ -19,6 +20,8 @@ pub mod ffi {
         stream_cb: *const c_void,
         stream_userdata_cb: Option<unsafe extern fn(*mut f32, c_int, c_int, *mut c_void)>,
         user_data: *mut c_void,
+        allocator: SAppAllocator,
+        logger: SAppLogger,
     }
 
     extern {
@@ -51,6 +54,8 @@ pub mod ffi {
                 None
             },
             user_data: app_ptr,
+            allocator: Default::default(),
+            logger: Default::default(),
         }
     }
 }

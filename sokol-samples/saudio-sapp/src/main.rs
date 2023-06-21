@@ -126,7 +126,7 @@ fn main() {
         audio_stream: None,
     };
 
-    let title = format!("saudio-sapp.rs ({:?})", sg_query_backend());
+    let title = format!("saudio-sapp.rs");
 
     let exit_code = sapp_run(
         saudio_app,
