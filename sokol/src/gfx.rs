@@ -5,6 +5,7 @@
 
 use std::fmt;
 use std::os::raw::c_void;
+use std::os::raw::c_int;
 
 mod ffi {
     use std::borrow::Borrow;
@@ -644,6 +645,7 @@ mod ffi {
             for (idx, color) in (*desc).colors.iter().enumerate() {
                 colors[idx] = *color;
             }
+            println!("color_count {:?}", (*desc).colors.len());
             let mut pip = SgPipelineDesc {
                 _start_canary: 0,
                 shader: (*desc).shader,
@@ -696,8 +698,8 @@ mod ffi {
     #[derive(Debug)]
     pub struct SgPassDesc {
         _start_canary: u32,
-        color_attachments: [super::SgAttachmentDesc; SG_MAX_COLOR_ATTACHMENTS],
-        depth_stencil_attachment: super::SgAttachmentDesc,
+        color_attachments: [super::SgPassAttachmentDesc; SG_MAX_COLOR_ATTACHMENTS],
+        depth_stencil_attachment: super::SgPassAttachmentDesc,
         label: *const c_char,
         _end_canary: u32,
     }
@@ -1635,10 +1637,18 @@ pub struct SgAttachmentDesc {
     pub u: SgAttachmentDescValue,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Default, Debug)]
+pub struct SgPassAttachmentDesc {
+    pub image: SgImage,
+    pub mip_level: c_int,
+    pub slice: c_int,
+}
+
 #[derive(Default, Debug)]
 pub struct SgPassDesc {
-    pub color_attachments: Vec<SgAttachmentDesc>,
-    pub depth_stencil_attachment: SgAttachmentDesc,
+    pub color_attachments: Vec<SgPassAttachmentDesc>,
+    pub depth_stencil_attachment: SgPassAttachmentDesc,
 }
 
 /*

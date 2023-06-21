@@ -55,20 +55,20 @@ impl MRT {
         };
         self.offscreen_pass_desc = SgPassDesc {
             color_attachments: vec![
-                SgAttachmentDesc {
+                SgPassAttachmentDesc {
                     image: sg_make_image(SG_IMAGE_CONTENT_NONE, &color_img_desc),
                     ..Default::default()
                 },
-                SgAttachmentDesc {
+                SgPassAttachmentDesc {
                     image: sg_make_image(SG_IMAGE_CONTENT_NONE, &color_img_desc),
                     ..Default::default()
                 },
-                SgAttachmentDesc {
+                SgPassAttachmentDesc {
                     image: sg_make_image(SG_IMAGE_CONTENT_NONE, &color_img_desc),
                     ..Default::default()
                 },
             ],
-            depth_stencil_attachment: SgAttachmentDesc {
+            depth_stencil_attachment: SgPassAttachmentDesc {
                 image: sg_make_image(SG_IMAGE_CONTENT_NONE, &depth_img_desc),
                 ..Default::default()
             },
@@ -296,10 +296,16 @@ impl SApp for MRT {
                 shader: cube_shd,
                 index_type: SgIndexType::UInt16,
                 depth: SgDepthState {
+                    pixel_format: SgPixelFormat::Depth,
                     compare: SgCompareFunc::LessEqual,
                     write_enabled: true,
                     ..Default::default()
                 },
+                colors: vec![
+                    SgColorState { ..Default::default() },
+                    SgColorState { ..Default::default() },
+                    SgColorState { ..Default::default() },
+                ],
                 cull_mode: SgCullMode::Back,
                 sample_count: MSAA_SAMPLES,
                 ..Default::default()
@@ -709,7 +715,7 @@ fn main() {
         ry: 0.0,
     };
 
-    let title = format!("mrt-sapp.rs ({:?})", sg_query_backend());
+    let title = format!("mrt-sapp.rs");
 
     let exit_code = sapp_run(
         mrt_app,
