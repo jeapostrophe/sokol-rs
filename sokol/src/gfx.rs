@@ -645,7 +645,6 @@ mod ffi {
             for (idx, color) in (*desc).colors.iter().enumerate() {
                 colors[idx] = *color;
             }
-            println!("color_count {:?}", (*desc).colors.len());
             let mut pip = SgPipelineDesc {
                 _start_canary: 0,
                 shader: (*desc).shader,
